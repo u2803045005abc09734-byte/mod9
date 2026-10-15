@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "waterfallparticles",
+  "version": "${version}",
+  "name": "Waterfall Particles",
+  "description": "Adds small cascading water droplets and spray around vertical flowing water.",
+  "authors": ["Phoenix"],
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "dev.phoenix.waterfallparticles.WaterfallParticles"
+    ],
+    "client": [
+      "dev.phoenix.waterfallparticles.client.WaterfallParticlesClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
