@@ -1,82 +1,120 @@
-package dev.phoenix.waterfallparticles.client;
 
-import dev.phoenix.waterfallparticles.WaterfallParticles;
-import dev.phoenix.waterfallparticles.client.particle.CascadeParticle;
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry;
-import net.minecraft.client.Minecraft;
+package dev.phoenix.waterfallparticles.client.particle;
+
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.Particle;
+import net.minecraft.client.particle.ParticleProvider;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.tags.FluidTags;
-import net.minecraft.world.level.material.FluidState;
+import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.util.RandomSource;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+/**
+ * Small, short-lived water-spray particle
+ * using Minecraft 26.3's SingleQuadParticle API.
+ */
+public final class CascadeParticle extends SingleQuadParticle {
+    private final SpriteSet sprites;
 
-/** Client-only scanner which adds a little spray beside vertical water columns. */
-public final class WaterfallParticlesClient implements ClientModInitializer {
-    private static int tickCounter;
+    private CascadeParticle(
+            ClientLevel level,
+            double x,
+            double y,
+            double z,
+            SpriteSet sprites,
+            double requestedScale
+    ) {
+        super(level, x, y, z, 0.0, 0.0, 0.0, sprites.first());
 
-    @Override
-    public void onInitializeClient() {
-        ParticleProviderRegistry.getInstance().register(WaterfallParticles.CASCADE, CascadeParticle.Provider::new);
-        ClientTickEvents.END_CLIENT_TICK.register(WaterfallParticlesClient::onClientTick);
+        this.sprites = sprites;
+        this.lifetime = 9 + this.random.nextInt(4);
+        this.quadSize = (float) Math.max(
+                0.35,
+                Math.min(0.95, requestedScale)
+        );
+
+        this.gravity = 0.4F;
+        this.xd = this.random.nextDouble() * 0.18 - 0.09;
+        this.yd = -0.02 - this.random.nextDouble() * 0.04;
+        this.zd = this.random.nextDouble() * 0.18 - 0.09;
+        this.hasPhysics = false;
+
+        this.setSpriteFromAge(sprites);
     }
 
-    private static void onClientTick(Minecraft client) {
-        if (client.level == null || client.player == null) {
+    @Override
+    public void tick() {
+        super.tick();
+
+        if (this.removed) {
             return;
         }
 
-        // Scan only every fourth tick to keep the visual effect inexpensive.
-        if (++tickCounter % 4 != 0) {
+        this.setSpriteFromAge(this.sprites);
+
+        BlockPos pos = BlockPos.containing(
+                this.x,
+                this.y,
+                this.z
+        );
+
+        // Remove the particle when it enters a solid block.
+        if (this.level.getBlockState(pos).isSolidRender()) {
+            this.setAlpha(0.0F);
+            this.remove();
             return;
         }
 
-        ClientLevel level = client.level;
-        BlockPos center = client.player.blockPosition();
-        ThreadLocalRandom random = ThreadLocalRandom.current();
+        // Fade out towards the end of the particle's lifetime.
+        float progress = (float) this.age / (float) this.lifetime;
 
-        for (int dx = -5; dx <= 5; dx++) {
-            for (int dz = -5; dz <= 5; dz++) {
-                for (int dy = -4; dy <= 5; dy++) {
-                    BlockPos pos = center.offset(dx, dy, dz);
-                    FluidState current = level.getFluidState(pos);
+        if (progress > 0.55F) {
+            this.setAlpha(
+                    Math.max(
+                            0.0F,
+                            1.0F - (progress - 0.55F) / 0.45F
+                    )
+            );
+        }
+    }
 
-                    // Only target flowing water with more water directly above it;
-                    // that filters out most ordinary lake and river surfaces.
-                    if (!current.is(FluidTags.WATER) || current.isSource()) {
-                        continue;
-                    }
-                    if (!level.getFluidState(pos.above()).is(FluidTags.WATER)) {
-                        continue;
-                    }
-                    if (random.nextInt(9) != 0) {
-                        continue;
-                    }
+    @Override
+    protected SingleQuadParticle.Layer getLayer() {
+        return SingleQuadParticle.Layer.TRANSLUCENT;
+    }
 
-                    List<Direction> openSides = new ArrayList<>(4);
-                    for (Direction direction : Direction.Plane.HORIZONTAL) {
-                        BlockPos side = pos.relative(direction);
-                        if (level.getFluidState(side).isEmpty() && level.getBlockState(side).isAir()) {
-                            openSides.add(direction);
-                        }
-                    }
-                    if (openSides.isEmpty()) {
-                        continue;
-                    }
+    public static final class Provider
+            implements ParticleProvider<SimpleParticleType> {
 
-                    Direction side = openSides.get(random.nextInt(openSides.size()));
-                    double px = pos.getX() + 0.5 + side.getStepX() * 0.51 + (random.nextDouble() - 0.5) * 0.08;
-                    double py = pos.getY() + 0.15 + random.nextDouble() * 0.7;
-                    double pz = pos.getZ() + 0.5 + side.getStepZ() * 0.51 + (random.nextDouble() - 0.5) * 0.08;
+        private final SpriteSet sprites;
 
-                    level.addParticle(WaterfallParticles.CASCADE, px, py, pz, 0.0, 0.0, 0.0);
-                }
-            }
+        public Provider(SpriteSet sprites) {
+            this.sprites = sprites;
+        }
+
+        @Override
+        public Particle createParticle(
+                SimpleParticleType type,
+                ClientLevel level,
+                double x,
+                double y,
+                double z,
+                double xAux,
+                double yAux,
+                double zAux,
+                RandomSource random
+        ) {
+            double scale = 0.45 + random.nextDouble() * 0.55;
+
+            return new CascadeParticle(
+                    level,
+                    x,
+                    y,
+                    z,
+                    this.sprites,
+                    scale
+            );
         }
     }
 }
